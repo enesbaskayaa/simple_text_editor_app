@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:text_editor/controller.dart';
+import 'package:text_editor/controller/controller.dart';
 
 class TextEditorScreen extends StatelessWidget {
   final TextEditorController _controller = Get.put(TextEditorController());
