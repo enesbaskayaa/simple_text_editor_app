@@ -13,6 +13,7 @@ class SimpleTextEditorApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return GetMaterialApp(
       title: 'Metin Düzenleyici',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(),
       home: TextEditorScreen(),
     );
