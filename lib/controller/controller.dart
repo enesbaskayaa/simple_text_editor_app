@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:developer';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -8,32 +10,29 @@ import 'package:path_provider/path_provider.dart';
 class TextEditorController extends GetxController {
   final Rx<File?> currentFile = Rx<File?>(null);
   final RxString fileContent = ''.obs;
+  final RxString savedContent = ''.obs;
+  final RxString fileName = 'Untitled.txt'.obs;
+  final RxBool hasChanges = false.obs;
   final TextEditingController textEditingController = TextEditingController();
 
   @override
   void onInit() {
     super.onInit();
-
-    /// İlk açılışta TextField içeriğini ayarla
     textEditingController.text = fileContent.value;
-
-    /// Kullanıcı değişiklik yaptıkça RxString'i güncelle
-    textEditingController.addListener(() {
-      if (fileContent.value != textEditingController.text) {
-        fileContent.value = textEditingController.text;
-      }
-    });
+    setupContentListener();
   }
 
   void updateContent(String content) {
     if (fileContent.value != content) {
       fileContent.value = content;
       if (textEditingController.text != content) {
-        textEditingController.text = content;
-        textEditingController.selection = TextSelection.fromPosition(
-          TextPosition(offset: content.length),
-        ); // 🔥 İmleci sona getir
+        textEditingController.value = TextEditingValue(
+          text: content,
+          selection: TextSelection.collapsed(offset: content.length),
+        );
       }
+      // Değişiklikleri kontrol et
+      hasChanges.value = fileContent.value != savedContent.value;
     }
   }
 
@@ -41,6 +40,29 @@ class TextEditorController extends GetxController {
   void onClose() {
     textEditingController.dispose();
     super.onClose();
+  }
+
+  void setupContentListener() {
+    textEditingController.addListener(() {
+      final currentText = textEditingController.text;
+      fileContent.value = currentText;
+      hasChanges.value = currentText != savedContent.value;
+    });
+  }
+
+  String get windowTitle {
+    return hasChanges.value ? '${fileName.value}*' : fileName.value;
+  }
+
+  Future<String> get platformSpecificDirectory async {
+    if (Platform.isAndroid) {
+      final dir = await getExternalStorageDirectory();
+      return '${dir?.path}/Documents';
+    } else if (Platform.isIOS) {
+      final dir = await getApplicationDocumentsDirectory();
+      return dir.path;
+    }
+    return (await getApplicationDocumentsDirectory()).path;
   }
 
   Future<void> openFile() async {
@@ -78,104 +100,89 @@ class TextEditorController extends GetxController {
 
   Future<void> saveFile() async {
     try {
-      File? file = currentFile.value;
-      if (file != null) {
-        debugPrint("💾 Kaydedilen dosya yolu: ${file.path}");
-
-        var raf = file.openSync(mode: FileMode.write);
-        raf.writeStringSync(fileContent.value);
-        raf.flushSync(); // 🔥 Disk senkronizasyonu sağlar
-        raf.closeSync();
-
-        // Dosyanın içeriğini tekrar okuyarak güncelle
-        String savedContent = await file.readAsString();
-        updateContent(savedContent); // 🔥 İçeriği güncelle
-        debugPrint("💾 Kaydedilen içerik (Tekrar Okuma): $savedContent");
-
-        Get.snackbar('Başarılı', 'Dosya kaydedildi');
-      } else {
-        final directory = await getApplicationDocumentsDirectory();
-        final newFile = File('${directory.path}/new_file_${DateTime.now().millisecondsSinceEpoch}.txt');
-        await newFile.writeAsString(fileContent.value);
-        currentFile.value = newFile;
-
-        // Yeni dosyanın içeriğini güncelle
-        String newContent = await newFile.readAsString();
-        updateContent(newContent); // 🔥 İçeriği güncelle
-        debugPrint("📂 Yeni dosya oluşturuldu: ${newFile.path}");
-        Get.snackbar('Başarılı', 'Yeni dosya kaydedildi');
-      }
-    } catch (e) {
-      debugPrint("Hata: $e");
-      Get.snackbar('Hata', 'Dosya kaydetme hatası: $e');
-    }
-  }
-
-  Future<void> saveToiCloud() async {
-    try {
-      final directory = await getApplicationSupportDirectory();
-      final iCloudPath = '${directory.path}/iCloud';
-
-      final iCloudDirectory = Directory(iCloudPath);
-      if (!await iCloudDirectory.exists()) {
-        await iCloudDirectory.create(recursive: true);
-      }
-
-      final fileName = currentFile.value?.path.split('/').last ?? 'new_file_${DateTime.now().millisecondsSinceEpoch}.txt';
-      final iCloudFile = File('$iCloudPath/$fileName');
-      await iCloudFile.writeAsString(fileContent.value);
-
-      Get.snackbar('Başarılı', 'Dosya iCloud\'a kaydedildi');
-    } catch (e) {
-      Get.snackbar('Hata', 'iCloud kaydetme hatası: $e');
-    }
-  }
-
-  Future<void> loadFromiCloud() async {
-    try {
-      final directory = await getApplicationSupportDirectory();
-      final iCloudPath = '${directory.path}/iCloud';
-
-      final iCloudDirectory = Directory(iCloudPath);
-      if (!await iCloudDirectory.exists()) {
-        await iCloudDirectory.create(recursive: true);
-      }
-
-      List<FileSystemEntity> files = await iCloudDirectory.list().toList();
-      List<File> txtFiles = files.whereType<File>().where((file) => file.path.endsWith('.txt')).toList();
-
-      if (txtFiles.isEmpty) {
-        Get.snackbar('Bilgi', 'iCloud dizininde txt dosyası bulunamadı');
+      // Boş içerik kontrolü (sadece yeni dosyalar için)
+      if (currentFile.value == null && fileContent.value.isEmpty) {
+        Get.snackbar(
+          'Uyarı',
+          'Boş dosya kaydedilemez!',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.orange,
+        );
         return;
       }
 
-      File? selectedFile = await Get.dialog<File?>(
+      if (currentFile.value == null) {
+        final bytes = utf8.encode(fileContent.value);
+
+        String? selectedPath = await FilePicker.platform.saveFile(
+          dialogTitle: 'Dosyayı Kaydet',
+          fileName: fileName.value.replaceAll('*', ''),
+          type: FileType.custom,
+          allowedExtensions: ['txt'],
+          bytes: bytes,
+        );
+
+        if (selectedPath != null) {
+          if (!selectedPath.endsWith('.txt')) selectedPath += '.txt';
+          final newFile = File(selectedPath);
+
+          if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+            await newFile.writeAsString(fileContent.value);
+          }
+
+          currentFile.value = newFile;
+          fileName.value = newFile.path.split('/').last;
+          savedContent.value = fileContent.value;
+          hasChanges.value = false;
+
+          Get.snackbar('Başarılı', 'Dosya kaydedildi: ${newFile.path}');
+        }
+      } else {
+        await currentFile.value!.writeAsString(fileContent.value);
+        savedContent.value = fileContent.value;
+        hasChanges.value = false;
+        Get.snackbar('Başarılı', 'Değişiklikler kaydedildi');
+      }
+    } catch (e) {
+      log('Dosya kaydetme hatası: $e');
+      Get.snackbar('Hata', 'Kaydetme başarısız: $e');
+    }
+  }
+
+  Future<void> newFile() async {
+    if (hasChanges.value) {
+      final result = await Get.dialog(
         AlertDialog(
-          title: Text('iCloud Dosyaları'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: txtFiles.map((file) {
-              return ListTile(
-                title: Text(file.path.split('/').last),
-                onTap: () => Get.back(result: file),
-              );
-            }).toList(),
-          ),
+          title: const Text('Kaydedilmemiş Değişiklikler'),
+          content: const Text('Kaydedilmemiş değişiklikleriniz var. Yine de devam etmek istiyor musunuz?'),
           actions: [
             TextButton(
-              onPressed: () => Get.back(),
-              child: Text('İptal'),
+              onPressed: () => Get.back(result: false),
+              child: const Text('İptal'),
+            ),
+            TextButton(
+              onPressed: () => Get.back(result: true),
+              child: const Text('Yeni Dosya'),
+            ),
+            TextButton(
+              onPressed: () {
+                Get.back();
+                saveFile();
+              },
+              child: const Text('Kaydet'),
             ),
           ],
         ),
       );
 
-      if (selectedFile != null) {
-        currentFile.value = selectedFile;
-        fileContent.value = await selectedFile.readAsString();
-      }
-    } catch (e) {
-      Get.snackbar('Hata', 'iCloud dosyaları alınamadı: $e');
+      if (result != true) return;
     }
+
+    currentFile.value = null;
+    fileName.value = 'Untitled.txt';
+    savedContent.value = '';
+    fileContent.value = '';
+    textEditingController.clear();
+    hasChanges.value = false;
   }
 }

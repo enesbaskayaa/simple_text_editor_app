@@ -11,40 +11,67 @@ class TextEditorScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Metin Düzenleyici'),
+        title: Obx(() => Text(_controller.windowTitle)),
         actions: [
           IconButton(
             icon: const Icon(Icons.file_open),
             onPressed: () => _controller.openFile(),
+            tooltip: 'Dosya Aç',
           ),
           IconButton(
             icon: const Icon(Icons.save),
             onPressed: () => _controller.saveFile(),
+            tooltip: 'Kaydet',
           ),
-          PopupMenuButton(
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                child: const Text('iCloud\'a Kaydet'),
-                onTap: () => _controller.saveToiCloud(),
-              ),
-              PopupMenuItem(
-                child: const Text('iCloud\'dan Aç'),
-                onTap: () => _controller.loadFromiCloud(),
-              ),
-            ],
+          IconButton(
+            icon: const Icon(Icons.add_circle_outline),
+            onPressed: () => _controller.newFile(),
+            tooltip: 'Yeni Dosya',
           ),
         ],
       ),
-      body: TextField(
-        controller: _controller.textEditingController, // Doğrudan kullan
-        maxLines: null,
-        expands: true,
-        textAlignVertical: TextAlignVertical.top,
-        decoration: const InputDecoration(
-          hintText: 'Metninizi buraya yazın...',
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.all(16),
-        ),
+      body: Column(
+        children: [
+          Expanded(
+            child: Container(
+              color: Colors.black87,
+              child: TextField(
+                controller: _controller.textEditingController,
+                maxLines: null,
+                expands: true,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                ),
+                textAlignVertical: TextAlignVertical.top,
+                decoration: const InputDecoration(
+                  hintText: 'Metninizi buraya yazın...',
+                  hintStyle: TextStyle(color: Colors.white54),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.all(16),
+                ),
+                cursorColor: Colors.white,
+              ),
+            ),
+          ),
+          Container(
+            color: Colors.black12,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Obx(
+                  () => Text(
+                    'Karakter: ${_controller.fileContent.value.length}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
